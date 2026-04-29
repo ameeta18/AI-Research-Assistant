@@ -9,15 +9,15 @@ load_dotenv()
 LLM_MODEL = "gemini-2.5-flash"
 LLM_TEMPERATURE = 0.3
 
-def get_llm() -> ChatGoogleGenerativeAI:
-    """Create a fresh LLM instance (without tools bound)."""
-    api_key = os.getenv("GOOGLE_API_KEY")
-    if not api_key:
-        raise ValueError("GOOGLE_API_KEY not found in environment variables")
+def get_llm(api_key: str = None) -> ChatGoogleGenerativeAI:
+    """Create a fresh LLM instance."""
+    key = api_key or os.getenv("GOOGLE_API_KEY")
+    if not key:
+        raise ValueError("Google API key not provided")
     return ChatGoogleGenerativeAI(
         model=LLM_MODEL,
         temperature=LLM_TEMPERATURE,
-        google_api_key=api_key,
+        google_api_key=key,
     )
 
 # ─── Vector Store Settings ───

@@ -2,12 +2,13 @@
 from langchain_core.tools import tool
 from langchain_community.vectorstores import FAISS
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from src.config import CHUNK_SIZE, CHUNK_OVERLAP, EMBEDDING_MODEL
-import os
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
+from src.config import CHUNK_SIZE, CHUNK_OVERLAP, EMBEDDING_MODEL
 from src.tools.read_pdf import get_last_read_text
+
 # ─── Module-level state ───
 _vectorstore: FAISS | None = None
+_embeddings = None
 
 _splitter = RecursiveCharacterTextSplitter(
     chunk_size=CHUNK_SIZE,
@@ -15,18 +16,17 @@ _splitter = RecursiveCharacterTextSplitter(
     separators=["\n\n", "\n", ". ", " ", ""],
 )
 
-GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
-if not GOOGLE_API_KEY:
-    raise RuntimeError("Missing GOOGLE_API_KEY. Set it as an environment variable.")
-_embeddings = GoogleGenerativeAIEmbeddings(
-    model=EMBEDDING_MODEL,
-    google_api_key=GOOGLE_API_KEY,
-)
 
+def init_embeddings(api_key: str):
+    """Initialize embeddings with user's API key."""
+    global _embeddings
+    _embeddings = GoogleGenerativeAIEmbeddings(
+        model=EMBEDDING_MODEL,
+        google_api_key=api_key,
+    )
 
 
 def get_vectorstore() -> FAISS | None:
-    """Access the current vector store (for debugging/testing)."""
     return _vectorstore
 
 
@@ -34,11 +34,8 @@ def get_vectorstore() -> FAISS | None:
 def index_paper(title: str, text: str = "") -> str:
     """Index a research paper into the vector store for later semantic search.
 
-    Call this AFTER reading a paper with read_pdf to store it for retrieval.
-    If text is empty or short, automatically uses the full text from the last read_pdf call.
-
     Args:
-        title: The paper title (used as metadata for source tracking)
+        title: The paper title
         text: The paper text (optional — auto-loaded from last read_pdf if empty)
 
     Returns:
@@ -46,7 +43,9 @@ def index_paper(title: str, text: str = "") -> str:
     """
     global _vectorstore
 
-    # Auto-load full text if not provided or too short
+    if _embeddings is None:
+        return "Error: API key not set. Please enter your Gemini API key."
+
     if not text or len(text.strip()) < 100:
         text = get_last_read_text()
         if not text:
@@ -65,15 +64,13 @@ def index_paper(title: str, text: str = "") -> str:
 
     return f"Successfully indexed '{title}' — {len(chunks)} chunks stored in vector database."
 
+
 @tool
 def search_papers(query: str, k: int = 5) -> str:
     """Search indexed papers for passages relevant to a query.
 
-    Use this to find specific information across all indexed papers
-    instead of relying on the full paper text in conversation history.
-
     Args:
-        query: What to search for (e.g., 'methodology for anomaly detection')
+        query: What to search for
         k: Number of relevant passages to return (default: 5)
 
     Returns:

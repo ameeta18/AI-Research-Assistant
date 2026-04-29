@@ -1,14 +1,8 @@
 # src/app.py
 import streamlit as st
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
-from src.graph import graph
 import uuid
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 
-# Generate unique thread per browser session
-if "thread_id" not in st.session_state:
-    st.session_state.thread_id = str(uuid.uuid4())
-
-config = {"configurable": {"thread_id": st.session_state.thread_id}}
 # ──────────────────────────────────────────────
 # Page Config
 # ──────────────────────────────────────────────
@@ -19,7 +13,41 @@ st.set_page_config(
 )
 
 st.title("🔬 AI Research Assistant")
-st.caption("Search → Analyze → Write research papers ")
+st.caption("Search → Analyze → Write research papers powered by RAG")
+
+# ──────────────────────────────────────────────
+# API Key Input
+# ──────────────────────────────────────────────
+if "api_key" not in st.session_state:
+    st.session_state.api_key = ""
+
+if not st.session_state.api_key:
+    st.info("🔑 Enter your Google Gemini API key to get started. Get one free at [Google AI Studio](https://aistudio.google.com/apikey)")
+    key_input = st.text_input("Gemini API Key", type="password", placeholder="AIza...")
+    if key_input:
+        st.session_state.api_key = key_input
+        st.rerun()
+    st.stop()
+
+# ──────────────────────────────────────────────
+# Initialize after API key is provided
+# ──────────────────────────────────────────────
+import os
+os.environ["GOOGLE_API_KEY"] = st.session_state.api_key
+
+from src.tools.vector_store import init_embeddings
+init_embeddings(st.session_state.api_key)
+
+from src.graph import build_graph
+
+if "graph" not in st.session_state:
+    st.session_state.graph = build_graph()
+
+if "thread_id" not in st.session_state:
+    st.session_state.thread_id = str(uuid.uuid4())
+
+config = {"configurable": {"thread_id": st.session_state.thread_id}}
+graph = st.session_state.graph
 
 # ──────────────────────────────────────────────
 # Sidebar
@@ -29,7 +57,7 @@ with st.sidebar:
     st.markdown("""
     1. **Tell me a research topic** → Finds papers on arXiv
     2. **Pick a paper to analyze** → Reads & indexes it in Vector DB
-    3. **Ask to write a paper** → Writes using RAG and generates PDF
+    3. **Ask to write a paper** → Writes using RAG + generates PDF
     """)
     st.divider()
     st.subheader("🛠️ Tools")
@@ -40,6 +68,10 @@ with st.sidebar:
     - 🗂️ `search_papers` — RAG retrieval
     - 📝 `render_latex_pdf` — Generate PDF
     """)
+    st.divider()
+    if st.button("🔄 Reset API Key"):
+        st.session_state.api_key = ""
+        st.rerun()
 
 # ──────────────────────────────────────────────
 # Chat History
@@ -87,17 +119,13 @@ if user_input:
             for event in graph.stream(graph_input, config, stream_mode="values"):
                 last_msg = event["messages"][-1]
 
-                # Show tool calls as status
                 if isinstance(last_msg, AIMessage) and last_msg.tool_calls:
                     for tc in last_msg.tool_calls:
                         icon = TOOL_ICONS.get(tc["name"], "🔧")
                         status.caption(f"{icon} Calling `{tc['name']}`...")
 
-                # Display AI response                
-                
                 if isinstance(last_msg, AIMessage) and last_msg.content:
                     content = last_msg.content
-                    # Gemini returns list of content blocks — extract text only
                     if isinstance(content, list):
                         content = " ".join(
                             block["text"] for block in content

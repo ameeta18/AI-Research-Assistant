@@ -49,9 +49,9 @@ def _search_arxiv_papers(topic: str, max_results: int = ARXIV_MAX_RESULTS) -> li
 
     url = (
         "http://export.arxiv.org/api/query"
-        f"?search_query=all:{query}"
+        f"?search_query=abs:{query}"
         f"&max_results={max_results}"
-        "&sortBy=submittedDate"
+        "&sortBy=relevance"
         "&sortOrder=descending"
     )
 

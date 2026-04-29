@@ -69,9 +69,13 @@ RULES:
 - ALWAYS use render_latex_pdf to generate PDFs — never show raw LaTeX
 - Use search_papers to retrieve context when writing
 - Include mathematical equations in written papers
-- Prioritize citing papers found via arxiv_search  or read via read_pdf
-- You may include well-known foundational papers from your knowledge
-- Must Add PDF links in references"""
+
+REFERENCE RULES:
+- Every reference MUST include: authors, title, year, and arXiv PDF link
+- Format: [1] Author et al. (Year). Title. URL: https://arxiv.org/pdf/XXXX
+- Prioritize citing papers found via arxiv_search — use their exact PDF links
+- You may cite well-known papers from your knowledge but MUST include their real arXiv PDF link
+- NEVER include a reference without a URL"""
 
 
 def call_agent(state: State) -> dict:
@@ -117,5 +121,5 @@ def build_graph():
     return workflow.compile(checkpointer=checkpointer)
 
 
-graph = build_graph()
-config = {"configurable": {"thread_id": THREAD_ID}}
+# graph = build_graph()
+# config = {"configurable": {"thread_id": THREAD_ID}}

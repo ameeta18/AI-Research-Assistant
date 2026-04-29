@@ -2,7 +2,7 @@
 
 An intelligent research assistant that **searches**, **analyzes**, and **writes** academic papers using a Retrieval-Augmented Generation (RAG) pipeline. Built with LangGraph, FAISS vector database, and Google Gemini.
 
-> **💡 Why this project?** Most RAG demos are "chat with PDF" toys. This system implements a full research workflow — from paper discovery on arXiv through vector-indexed analysis to LaTeX paper generation with real citations.
+> This system implements a full research workflow — from paper discovery on arXiv through vector-indexed analysis to LaTeX paper generation with real citations.
 
 ---
 
@@ -233,14 +233,12 @@ uv run python test_eval.py
 ---
 
 ## Limitations & Future Work
-
+- arXiv API uses keyword matching, not semantic search — some results 
+  may not be perfectly relevant. In production, Semantic Scholar API 
+  would provide better relevance ranking.
 - **Embedding scope:** Vector store is in-memory — resets each session. Could persist with `faiss.write_index()` for cross-session usage.
 - **Faithfulness evaluation:** Current keyword-overlap approach is simple by design. Integration with an NLI model (e.g., cross-encoder) would provide semantic faithfulness scoring.
 - **Single paper depth:** Currently optimized for indexing 1-3 papers per session. Batch ingestion pipeline would improve multi-paper research workflows.
 - **Reference verification:** The LLM may supplement references from its training knowledge. A citation verification tool that validates arXiv IDs could ensure 100% real citations.
 
 ---
-
-## License
-
-MIT
