@@ -1,16 +1,26 @@
-# test_eval.py (in project root)
+# test_eval.py
+
 import json
+import os
+from dotenv import load_dotenv
+load_dotenv()
+
+# Initialize embeddings before anything else
+from src.tools.vector_store import init_embeddings
+init_embeddings(os.getenv("GOOGLE_API_KEY"))
+
 from src.tools.vector_store import index_paper, search_papers
 from src.tools.read_pdf import read_pdf
 from src.evaluation import (
     SessionMetrics,
-    evaluate_retrieval, 
-    check_faithfulness, 
+    evaluate_retrieval,
+    check_faithfulness,
     analyze_chunk_coverage,
 )
 
-# ─── Setup: Read and index a paper ───
-print("📄 Reading paper...")
+
+# ─── Read and index paper ───
+print("📄 Reading paper")
 text = read_pdf.invoke({"url": "https://arxiv.org/pdf/1706.03762"})
 print(f"Read {len(text)} characters\n")
 
@@ -18,18 +28,23 @@ print("💾 Indexing paper")
 result = index_paper.invoke({"title": "Attention Is All You Need"})
 print(result, "\n")
 
-# ─── Evaluation 1: Chunk Coverage ───
-print("=" * 50)
+# ─── Chunk Coverage ───
+
 print("📦 CHUNK COVERAGE")
-print("=" * 50)
+
 coverage = analyze_chunk_coverage()
 print(json.dumps(coverage, indent=2))
 
-# ─── Evaluation 2: Retrieval Quality ───
-print("\n" + "=" * 50)
+# ─── Retrieval Quality ───
+
 print("🗂️ RETRIEVAL QUALITY")
-print("=" * 50)
-queries = ["attention mechanism", "transformer architecture", "self-attention"]
+queries = [
+    "multi-head attention mechanism",
+    "encoder decoder architecture",
+    "self-attention dot product",
+    "positional encoding sinusoidal",
+    "layer normalization residual",
+]
 for query in queries:
     result = evaluate_retrieval(query)
     print(f"\nQuery: '{query}'")
@@ -38,31 +53,37 @@ for query in queries:
     print(f"  Worst score: {result['scores']['worst']}")
     print(f"  Mean score: {result['scores']['mean']}")
 
-# ─── Evaluation 3: Faithfulness ───
-print("\n" + "=" * 50)
+# ─── Faithfulness ───
 print("✅ FAITHFULNESS CHECK")
-print("=" * 50)
-sample_text = """The Transformer model architecture relies entirely on 
-self-attention mechanisms, dispensing with recurrence and convolutions. 
-Multi-head attention allows the model to jointly attend to information 
-from different representation subspaces. The encoder maps an input 
-sequence to continuous representations using stacked self-attention 
-and feed-forward layers."""
-faith = check_faithfulness(sample_text, "transformer attention")
+sample_text = """The Transformer model relies entirely on self-attention 
+mechanisms to compute representations of its input and output without using 
+sequence-aligned recurrence or convolution. Multi-head attention allows the 
+model to jointly attend to information from different representation 
+subspaces at different positions. The encoder is composed of a stack of 
+identical layers, each having two sub-layers: a multi-head self-attention 
+mechanism and a position-wise fully connected feed-forward network. Layer 
+normalization and residual connections are employed around each sub-layer. 
+The decoder inserts a third sub-layer which performs multi-head attention 
+over the output of the encoder stack. Positional encoding using sinusoidal 
+functions is added to the input embeddings to inject sequence order information."""
+
+faith = check_faithfulness(sample_text, "transformer attention mechanism")
 print(f"  Grounding score: {faith['grounding_score']:.1%}")
 print(f"  Terms in generated: {faith['technical_terms_in_generated']}")
 print(f"  Terms in source: {faith['technical_terms_in_sources']}")
 print(f"  Overlapping terms: {faith['overlapping_terms']}")
+print(f"  Sample grounded: {faith['sample_grounded_terms']}")
 
-# ─── Export Full Metrics ───
-print("\n" + "=" * 50)
+# ─── Export ───
+
 print("📥 EXPORTING METRICS")
-print("=" * 50)
 metrics = SessionMetrics()
 metrics.log_paper_indexed("Attention Is All You Need", coverage.get("total_chunks", 0))
 for query in queries:
     r = evaluate_retrieval(query)
     metrics.log_retrieval(query, r.get("results", []))
+metrics.log_generation_check("faithfulness", faith["grounding_score"], 
+    f"{faith['overlapping_terms']}/{faith['technical_terms_in_generated']} terms grounded")
 
 metrics.to_json("output/evaluation_results.json")
 print("Saved to: output/evaluation_results.json")

@@ -1,0 +1,20 @@
+{
+  "session_duration_seconds": 2.6,
+  "papers_indexed": 1,
+  "total_chunks_stored": 49,
+  "tool_performance": {},
+  "retrieval_metrics": {
+    "total_queries": 5,
+    "avg_relevance_score": 0.519,
+    "hit_rate_percent": 100.0
+  },
+  "generation_checks": [
+    {
+      "check_type": "faithfulness",
+      "score": 0.596,
+      "details": "31/52 terms grounded",
+      "timestamp": "2026-05-01T16:45:52.604876"
+    }
+  ],
+  "exported_at": "2026-05-01T16:45:52.604876"
+}
