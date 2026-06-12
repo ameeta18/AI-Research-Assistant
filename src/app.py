@@ -13,7 +13,7 @@ st.set_page_config(
 )
 
 st.title("🔬 AI Research Assistant")
-st.caption("Search → Analyze → Write research papers powered by RAG")
+st.caption("Search → Analyze → Write research papers with proper citations")
 
 # ──────────────────────────────────────────────
 # API Key Input
@@ -55,9 +55,9 @@ graph = st.session_state.graph
 with st.sidebar:
     st.header("🤖 How to Use")
     st.markdown("""
-    1. **Tell me a research topic** → Finds papers via Semantic Scholar + arXiv
+    1. **Tell me a research topic** → Finds papers via Semantic Scholar and arXiv
     2. **Pick a paper to analyze** → Reads & indexes it in Vector DB
-    3. **Ask to write a paper** → Writes using RAG + generates PDF
+    3. **Ask to write a paper** → Writes using RAG and generates PDF with proper citations
     """)
     st.divider()
     st.subheader("🛠️ Tools")

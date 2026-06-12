@@ -1,3 +1,4 @@
+import os
 import time
 import requests
 from langchain_core.tools import tool
@@ -29,8 +30,17 @@ def semantic_search(topic: str) -> list[dict]:
         "fields": "title,authors,abstract,year,url,externalIds",
     }
 
-    for attempt in range(3):
-        resp = requests.get(url, params=params, timeout=30)
+    # Add API key header if available (raises rate limit significantly)
+    headers = {}
+    api_key = os.getenv("SEMANTIC_SCHOLAR_API_KEY")
+    if api_key:
+        headers["x-api-key"] = api_key
+
+    for attempt in range(4):
+        # Respect the shared rate limit (1 request/sec without a key)
+        time.sleep(1)
+
+        resp = requests.get(url, params=params, headers=headers, timeout=30)
         if resp.status_code == 429:
             wait = 3 * (attempt + 1)
             time.sleep(wait)
