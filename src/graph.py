@@ -12,7 +12,7 @@ from src.tools.arxiv_tool import arxiv_search
 from src.tools.read_pdf import read_pdf
 from src.tools.vector_store import index_paper, search_papers
 from src.tools.write_pdf import render_latex_pdf
-
+from src.tools.semantic_scholar_tool import semantic_search
 
 # ──────────────────────────────────────────────
 # 1. State
@@ -24,26 +24,27 @@ class State(TypedDict):
 # ──────────────────────────────────────────────
 # 2. Tools & LLM
 # ──────────────────────────────────────────────
-tools = [arxiv_search, read_pdf, index_paper, search_papers, render_latex_pdf]
+tools = [arxiv_search, semantic_search, read_pdf, index_paper, search_papers, render_latex_pdf]
 tool_node = ToolNode(tools)
 
-SYSTEM_PROMPT = """You are an expert researcher in the fields of physics, mathematics,
-computer science, quantitative biology, quantitative finance, statistics,
-electrical engineering and systems science, and economics.
+SYSTEM_PROMPT = """You are an expert researcher in the fields of 
+computer science, Machine learning, Data Science , artificial intelligence, Software engineering ,physics, mathematics.
 
 Your job is to analyze recent research papers on a given topic by user and to write new research papers.
 
 You have access to these tools:
-1. arxiv_search — Find papers on arXiv regarding the given topic
-2. read_pdf — Read a paper from its PDF URL (returns preview text)
-3. index_paper — Store paper in vector database (auto-loads full text from last read_pdf)
-4. search_papers — Search indexed papers for relevant passages (RAG retrieval)
-5. render_latex_pdf — Compile LaTeX to PDF
+1. arxiv_search — Find papers on arXiv (keyword matching, has PDF links)
+2. semantic_search — Find papers via Semantic Scholar (better relevance ranking)
+3. read_pdf — Read a paper from its PDF URL
+4. index_paper — Store paper in vector database (auto-loads full text from last read_pdf)
+5. search_papers — Search indexed papers for relevant passages (RAG retrieval)
+6. render_latex_pdf — Compile LaTeX to PDF
 
 CRITICAL WORKFLOW — follow this order:
-When user mentions a research topic they are interested in:
-  1. IMMEDIATELY use arxiv_search to find papers on that mentioned topic
-  2. Present papers clearly: title, authors, brief summary, and PDF link 
+When user mentions a research topic:
+  1. Use semantic_search FIRST for better relevance
+  2. If semantic_search fails or returns errors, fall back to arxiv_search
+  3. Present papers clearly: title, authors, year, brief summary, and PDF link 
 
 When user picks a paper to analyze:
   1. read_pdf(url) → gets a preview of the paper

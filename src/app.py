@@ -55,14 +55,15 @@ graph = st.session_state.graph
 with st.sidebar:
     st.header("🤖 How to Use")
     st.markdown("""
-    1. **Tell me a research topic** → Finds papers on arXiv
+    1. **Tell me a research topic** → Finds papers via Semantic Scholar + arXiv
     2. **Pick a paper to analyze** → Reads & indexes it in Vector DB
     3. **Ask to write a paper** → Writes using RAG + generates PDF
     """)
     st.divider()
     st.subheader("🛠️ Tools")
     st.markdown("""
-    - 🔍 `arxiv_search` — Find papers
+    - 🔍 `arxiv_search` — Find papers (keyword)
+    - 🔎 `semantic_search` — Find papers (semantic ranking)
     - 📄 `read_pdf` — Read paper content
     - 💾 `index_paper` — Store in FAISS
     - 🗂️ `search_papers` — RAG retrieval
@@ -87,6 +88,7 @@ for msg in st.session_state.messages:
 # ──────────────────────────────────────────────
 TOOL_ICONS = {
     "arxiv_search": "🔍",
+    "semantic_search": "🔎",
     "read_pdf": "📄",
     "index_paper": "💾",
     "search_papers": "🗂️",
