@@ -16,28 +16,29 @@ from src.evaluation import (
     evaluate_retrieval,
     check_faithfulness,
     analyze_chunk_coverage,
+    check_semantic_faithfulness
 )
 
 
 # ─── Read and index paper ───
-print("📄 Reading paper")
+print(" Reading paper")
 text = read_pdf.invoke({"url": "https://arxiv.org/pdf/1706.03762"})
 print(f"Read {len(text)} characters\n")
 
-print("💾 Indexing paper")
+print(" Indexing paper")
 result = index_paper.invoke({"title": "Attention Is All You Need"})
 print(result, "\n")
 
 # ─── Chunk Coverage ───
 
-print("📦 CHUNK COVERAGE")
+print(" CHUNK COVERAGE")
 
 coverage = analyze_chunk_coverage()
 print(json.dumps(coverage, indent=2))
 
 # ─── Retrieval Quality ───
 
-print("🗂️ RETRIEVAL QUALITY")
+print(" RETRIEVAL QUALITY")
 queries = [
     "multi-head attention mechanism",
     "encoder decoder architecture",
@@ -54,7 +55,7 @@ for query in queries:
     print(f"  Mean score: {result['scores']['mean']}")
 
 # ─── Faithfulness ───
-print("✅ FAITHFULNESS CHECK")
+print(" FAITHFULNESS CHECK")
 sample_text = """The Transformer model relies entirely on self-attention 
 mechanisms to compute representations of its input and output without using 
 sequence-aligned recurrence or convolution. Multi-head attention allows the 
@@ -73,10 +74,22 @@ print(f"  Terms in generated: {faith['technical_terms_in_generated']}")
 print(f"  Terms in source: {faith['technical_terms_in_sources']}")
 print(f"  Overlapping terms: {faith['overlapping_terms']}")
 print(f"  Sample grounded: {faith['sample_grounded_terms']}")
+semantic_test_text = """Transformers process all tokens simultaneously rather 
+than sequentially. The attention mechanism lets each word attend to every other 
+word in the sequence. Multiple attention heads capture different types of 
+relationships. The model was trained exclusively on vintage cat photographs 
+from the 1980s. Quantum entanglement is the core principle behind the 
+optimizer. Positional encoding injects information about word order."""
+print(" SEMANTIC FAITHFULNESS CHECK")
+semantic_faith = check_semantic_faithfulness(semantic_test_text)
+print(f"  Grounding score: {semantic_faith['grounding_score']:.1%}")
+print(f"  Method: {semantic_faith['method']}")
+print(f"  Sentences grounded: {semantic_faith['sentences_grounded']}/{semantic_faith['sentences_evaluated']}")
+print(f"  Avg similarity: {semantic_faith['avg_sentence_similarity']}")
 
 # ─── Export ───
 
-print("📥 EXPORTING METRICS")
+print(" EXPORTING METRICS")
 metrics = SessionMetrics()
 metrics.log_paper_indexed("Attention Is All You Need", coverage.get("total_chunks", 0))
 for query in queries:
@@ -84,6 +97,9 @@ for query in queries:
     metrics.log_retrieval(query, r.get("results", []))
 metrics.log_generation_check("faithfulness", faith["grounding_score"], 
     f"{faith['overlapping_terms']}/{faith['technical_terms_in_generated']} terms grounded")
+
+metrics.log_generation_check("semantic_faithfulness", semantic_faith["grounding_score"],
+    f"{semantic_faith['sentences_grounded']}/{semantic_faith['sentences_evaluated']} sentences grounded")
 
 metrics.to_json("output/evaluation_results.json")
 print("Saved to: output/evaluation_results.json")

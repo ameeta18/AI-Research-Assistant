@@ -8,8 +8,8 @@ import json
 from datetime import datetime
 from pathlib import Path
 from langchain_core.tools import tool
-from src.tools.vector_store import get_vectorstore
-
+from src.tools.vector_store import get_vectorstore, _embeddings
+import numpy as np
 
 # ──────────────────────────────────────────────
 # 1. Session Metrics Tracker
@@ -218,7 +218,63 @@ def check_faithfulness(generated_text: str, query: str, k: int = 5) -> dict:
 
 
 # ──────────────────────────────────────────────
-# 4. Chunk Coverage Analysis
+# 4. check semantic faithfulness
+# ──────────────────────────────────────────────
+
+def check_semantic_faithfulness(generated_text: str, k: int = 5) -> dict:
+    """
+    Measure faithfulness using semantic similarity instead of keyword overlap.
+    
+    Splits generated text into sentences, embeds each one, and checks how 
+    similar each is to the most relevant chunk in the vector store. This 
+    catches paraphrasing that keyword matching misses.
+
+    Returns a grounding score based on cosine similarity.
+    """
+    store = get_vectorstore()
+    if store is None or _embeddings is None:
+        return {"error": "No papers indexed or embeddings not initialized"}
+
+    # Split generated text into sentences
+    sentences = [s.strip() for s in generated_text.split(".") if len(s.strip()) > 20]
+    if not sentences:
+        return {"error": "No valid sentences in generated text"}
+
+    grounded_count = 0
+    sentence_scores = []
+    SIMILARITY_THRESHOLD = 0.60
+
+    for sentence in sentences:
+
+        # Embed the sentence
+        sentence_vec = _embeddings.embed_query(sentence)
+
+        # Find the most similar chunk in the store
+        results = store.similarity_search_with_score(sentence, k=1)
+        if not results:
+            continue
+
+        # FAISS returns L2 distance — convert to similarity
+        # Lower L2 = more similar; normalize to 0-1 range
+        _, l2_distance = results[0]
+        similarity = 1 / (1 + l2_distance)  # convert distance to similarity
+
+        sentence_scores.append(round(similarity, 3))
+        if similarity >= SIMILARITY_THRESHOLD:
+            grounded_count += 1
+
+    grounding_score = grounded_count / len(sentences) if sentences else 0
+
+    return {
+        "grounding_score": round(grounding_score, 3),
+        "method": "semantic_similarity",
+        "sentences_evaluated": len(sentences),
+        "sentences_grounded": grounded_count,
+        "avg_sentence_similarity": round(np.mean(sentence_scores), 3) if sentence_scores else 0,
+        "threshold": SIMILARITY_THRESHOLD,
+    }
+# ──────────────────────────────────────────────
+# 5. Chunk Coverage Analysis
 # ──────────────────────────────────────────────
 def analyze_chunk_coverage() -> dict:
     """

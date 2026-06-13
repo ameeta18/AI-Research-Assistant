@@ -1,5 +1,5 @@
 {
-  "session_duration_seconds": 2.6,
+  "session_duration_seconds": 1.4,
   "papers_indexed": 1,
   "total_chunks_stored": 49,
   "tool_performance": {},
@@ -13,8 +13,14 @@
       "check_type": "faithfulness",
       "score": 0.596,
       "details": "31/52 terms grounded",
-      "timestamp": "2026-05-01T16:45:52.604876"
+      "timestamp": "2026-06-12T21:28:53.578029"
+    },
+    {
+      "check_type": "semantic_faithfulness",
+      "score": 0.667,
+      "details": "4/6 sentences grounded",
+      "timestamp": "2026-06-12T21:28:53.578029"
     }
   ],
-  "exported_at": "2026-05-01T16:45:52.604876"
+  "exported_at": "2026-06-12T21:28:53.578029"
 }
