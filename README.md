@@ -2,7 +2,7 @@
 
 An intelligent research assistant that **searches**, **analyzes**, and **writes** academic papers using a Retrieval-Augmented Generation (RAG) pipeline. Built with LangGraph, FAISS vector database,FastAPI, MCP and Google Gemini.
 
-> This system implements a full research workflow — from paper discovery across two academic search sources, through vector-indexed analysis, to LaTeX paper generation with real citations.
+> This system implements a full research workflow from paper discovery across two academic search sources, through vector-indexed analysis, to LaTeX paper generation with real citations.
 
 ---
 
