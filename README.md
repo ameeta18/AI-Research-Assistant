@@ -1,6 +1,6 @@
 # 🔬 AI Research Assistant — RAG-Powered Paper Discovery, Analysis & Generation
 
-An intelligent research assistant that **searches**, **analyzes**, and **writes** academic papers using a Retrieval-Augmented Generation (RAG) pipeline. Built with LangGraph, FAISS vector database,FastAPI and Google Gemini.
+An intelligent research assistant that **searches**, **analyzes**, and **writes** academic papers using a Retrieval-Augmented Generation (RAG) pipeline. Built with LangGraph, FAISS vector database,FastAPI, MCP and Google Gemini.
 
 > This system implements a full research workflow — from paper discovery across two academic search sources, through vector-indexed analysis, to LaTeX paper generation with real citations.
 
@@ -80,6 +80,8 @@ flowchart TD
 
 🌐 **Dual Interface** — Streamlit UI for interactive demos and a FastAPI backend for programmatic access
 
+🔌 **MCP Server** — Search tools exposed via Model Context Protocol, usable in Claude Desktop or any MCP-compatible client
+
 ---
 
 ## Evaluation Results
@@ -137,6 +139,7 @@ Evaluated using the "Attention Is All You Need" paper (Vaswani et al., 2017):
 | **Frontend** | Streamlit | Rapid prototyping with real-time streaming and session state |
 | **Backend API** | FastAPI | Production-ready REST API with interactive Swagger docs |
 | **Package Manager** | uv | Modern Python tooling — fast, deterministic dependency resolution |
+| **MCP Server** | FastMCP (MCP Python SDK) | Exposes search tools as reusable infrastructure for any MCP client |
 
 ---
 
@@ -169,6 +172,33 @@ User: "Write a paper about improvements to self-attention"
 
 **Why RAG matters here:** Instead of stuffing a 40K-character paper into the LLM's context (which would exceed token limits), we store it in FAISS and retrieve only the ~5K chars that are relevant to the current task. This reduced context usage by 87% and made the system scalable — index multiple papers and still stay within token limits.
 
+## MCP Server Integration
+
+The academic search tools (arXiv + Semantic Scholar) are also exposed as a 
+standalone **Model Context Protocol (MCP)** server, making them reusable in 
+Claude Desktop or any MCP-compatible client — not locked into this project.
+
+### Run standalone
+```bash
+uv run python mcp_server.py
+```
+
+### Install into Claude Desktop
+Add to your `claude_desktop_config.json`:
+```json
+{
+  "mcpServers": {
+    "academic-research": {
+      "command": "uv",
+      "args": ["run", "--directory", "/path/to/project", "python", "mcp_server.py"]
+    }
+  }
+}
+```
+
+Once configured, the search tools appear directly inside Claude Desktop — 
+demonstrating MCP's core value: tools built once, reusable across any client.
+
 ---
 
 ## Project Structure
@@ -190,6 +220,7 @@ research-agent/
 │       └── write_pdf.py             # LaTeX sanitization + Tectonic compilation
 ├── output/                          # Generated .tex, .pdf, and metrics JSON
 ├── pyproject.toml
+├── mcp_server.py                    # MCP server exposing search tools
 ├── .env.example
 └── README.md
 ```
