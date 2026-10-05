@@ -1,8 +1,18 @@
 # src/tools/arxiv_tool.py
 import xml.etree.ElementTree as ET
-import requests
+
 from langchain_core.tools import tool
-from src.config import ARXIV_MAX_RESULTS
+
+from src.cache import get_cache
+from src.config import ARXIV_MAX_RESULTS, MAX_SEARCH_QUERY_CHARS, MAX_SEARCH_RESULTS
+from src.reliability import (
+    ExternalServiceError,
+    UserFacingError,
+    request_with_retries,
+    validate_int_range,
+    validate_text,
+)
+from src.tools.pdf_sources import select_working_pdf
 
 
 def _parse_arxiv_xml(xml_content: str) -> list[dict]:
@@ -11,7 +21,10 @@ def _parse_arxiv_xml(xml_content: str) -> list[dict]:
         "atom": "http://www.w3.org/2005/Atom",
         "arxiv": "http://arxiv.org/schemas/atom",
     }
-    root = ET.fromstring(xml_content)
+    try:
+        root = ET.fromstring(xml_content)
+    except ET.ParseError as exc:
+        raise ExternalServiceError("arXiv returned an invalid response.") from exc
     entries = []
 
     for entry in root.findall("atom:entry", ns):
@@ -30,8 +43,8 @@ def _parse_arxiv_xml(xml_content: str) -> list[dict]:
                 break
 
         entries.append({
-            "title": entry.findtext("atom:title", namespaces=ns).strip(),
-            "summary": entry.findtext("atom:summary", namespaces=ns).strip(),
+            "title": (entry.findtext("atom:title", namespaces=ns) or "Unknown").strip(),
+            "summary": (entry.findtext("atom:summary", namespaces=ns) or "").strip(),
             "authors": authors,
             "categories": categories,
             "pdf": pdf_link,
@@ -42,23 +55,50 @@ def _parse_arxiv_xml(xml_content: str) -> list[dict]:
 
 def _search_arxiv_papers(topic: str, max_results: int = ARXIV_MAX_RESULTS) -> list[dict]:
     """Search arXiv API for papers on a given topic."""
-    # Clean query - replace spaces with +, remove problematic chars
-    query = "+".join(topic.lower().split())
-    for char in '()" ':
-        query = query.replace(char, "")
+    topic = validate_text(topic, "Search topic", MAX_SEARCH_QUERY_CHARS)
+    max_results = validate_int_range(
+        max_results,
+        "max_results",
+        1,
+        MAX_SEARCH_RESULTS,
+    )
+    query = " ".join(topic.lower().split())
+    cache = get_cache()
+    cache_identity = {
+        "query": query.casefold(),
+        "max_results": max_results,
+        "pdf_policy_version": 2,
+    }
+    cached = cache.get_json("arxiv-search", cache_identity)
+    if (
+        isinstance(cached, list)
+        and cached
+        and all(isinstance(paper, dict) and "error" not in paper for paper in cached)
+    ):
+        return cached
 
-    url = (
-        "http://export.arxiv.org/api/query"
-        f"?search_query=abs:{query}"
-        f"&max_results={max_results}"
-        "&sortBy=relevance"
-        "&sortOrder=descending"
+    resp = request_with_retries(
+        "GET",
+        "https://export.arxiv.org/api/query",
+        service_name="arXiv",
+        params={
+            "search_query": f"abs:{query}",
+            "max_results": max_results,
+            "sortBy": "relevance",
+            "sortOrder": "descending",
+        },
     )
 
-    resp = requests.get(url, timeout=15)
-    resp.raise_for_status()
-
-    return _parse_arxiv_xml(resp.text)
+    papers = []
+    for paper in _parse_arxiv_xml(resp.text):
+        working_pdf = select_working_pdf([("arXiv", paper.get("pdf"))])
+        if working_pdf is None:
+            continue
+        paper["pdf"], paper["pdf_source"] = working_pdf
+        papers.append(paper)
+    if papers:
+        cache.set_json("arxiv-search", cache_identity, papers)
+    return papers
 
 
 @tool
@@ -71,18 +111,22 @@ def arxiv_search(topic: str) -> list[dict]:
     Returns:
         List of papers with title, authors, summary, categories, and pdf link
     """
-    papers = _search_arxiv_papers(topic)
-    if not papers:
-        words = topic.lower().split()
-        stop_words = {"a", "an", "the", "of", "from", "and", "in", "on", "for",
-                      "with", "to", "by", "about", "using", "based", "topic",
-                      "interested", "im", "i'm", "model", "models", "paper", "papers"}
-        keywords = [w for w in words if w not in stop_words]
-        
-        # Try with just 2-3 core keywords
-        if len(keywords) > 2:
-            shorter_query = " ".join(keywords[:3])
-            papers = _search_arxiv_papers(shorter_query)
-    if not papers:
-        return [{"error": f"No papers found for topic: {topic}"}]
-    return papers
+    try:
+        normalized_topic = validate_text(topic, "Search topic", MAX_SEARCH_QUERY_CHARS)
+        papers = _search_arxiv_papers(normalized_topic)
+        if not papers:
+            words = normalized_topic.lower().split()
+            stop_words = {
+                "a", "an", "the", "of", "from", "and", "in", "on", "for",
+                "with", "to", "by", "about", "using", "based", "topic",
+                "interested", "im", "i'm", "model", "models", "paper", "papers",
+            }
+            keywords = [word for word in words if word not in stop_words]
+
+            if len(keywords) > 2:
+                papers = _search_arxiv_papers(" ".join(keywords[:3]))
+        if not papers:
+            return [{"error": f"No papers found for topic: {normalized_topic}"}]
+        return papers
+    except UserFacingError as exc:
+        return [{"error": str(exc)}]

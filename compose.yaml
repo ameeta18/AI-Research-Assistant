@@ -1,0 +1,131 @@
+name: ai-researcher
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-researcher:local
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${APP_PORT:-8501}:8501"
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      CACHE_ENABLED: "true"
+      REDIS_URL: redis://redis:6379/0
+      DATABASE_ENABLED: "true"
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-ai_researcher}:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/${POSTGRES_DB:-ai_researcher}"
+      LANGGRAPH_STRICT_MSGPACK: "true"
+      SEMANTIC_SCHOLAR_API_KEY: "${SEMANTIC_SCHOLAR_API_KEY:-}"
+      LANGSMITH_TRACING: "${LANGSMITH_TRACING:-false}"
+      LANGSMITH_API_KEY: "${LANGSMITH_API_KEY:-}"
+      LANGSMITH_PROJECT: "${LANGSMITH_PROJECT:-ai-research-assistant}"
+      LANGSMITH_HIDE_INPUTS: "${LANGSMITH_HIDE_INPUTS:-true}"
+      LANGSMITH_HIDE_OUTPUTS: "${LANGSMITH_HIDE_OUTPUTS:-true}"
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    volumes:
+      - generated-papers:/app/output
+      - tectonic-cache:/home/app/.cache
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=3).read()"
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ai-researcher:local
+    restart: "no"
+    command: [python, -m, src.migrate]
+    environment:
+      APP_ENV: production
+      DATABASE_ENABLED: "true"
+      DATABASE_URL: "postgresql+psycopg://${POSTGRES_USER:-ai_researcher}:${POSTGRES_PASSWORD:-local-development-only}@postgres:5432/${POSTGRES_DB:-ai_researcher}"
+      LANGGRAPH_STRICT_MSGPACK: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: "${POSTGRES_DB:-ai_researcher}"
+      POSTGRES_USER: "${POSTGRES_USER:-ai_researcher}"
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-local-development-only}"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U ${POSTGRES_USER:-ai_researcher} -d ${POSTGRES_DB:-ai_researcher}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+  redis:
+    image: redis:7.4-alpine
+    user: redis
+    restart: unless-stopped
+    command:
+      - redis-server
+      - --save
+      - ""
+      - --appendonly
+      - "no"
+    healthcheck:
+      test: [CMD, redis-cli, ping]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "3"
+
+volumes:
+  generated-papers:
+  tectonic-cache:
+  postgres-data:

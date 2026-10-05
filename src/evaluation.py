@@ -3,12 +3,10 @@
 Evaluation metrics for the Multi-Agent Research Assistant.
 Measures retrieval quality, generation faithfulness, and tool reliability.
 """
-import time
 import json
 from datetime import datetime
 from pathlib import Path
-from langchain_core.tools import tool
-from src.tools.vector_store import get_vectorstore, _embeddings
+from src.tools.vector_store import get_vectorstore
 import numpy as np
 
 # ──────────────────────────────────────────────
@@ -136,14 +134,14 @@ class SessionMetrics:
 # ──────────────────────────────────────────────
 # 2. Retrieval Evaluation
 # ──────────────────────────────────────────────
-def evaluate_retrieval(query: str, k: int = 5) -> dict:
+def evaluate_retrieval(query: str, session_id: str, k: int = 5) -> dict:
     """
     Evaluate retrieval quality for a given query.
     Returns relevance scores and ranking metrics.
 
     Lower FAISS distance = more relevant (L2 distance).
     """
-    store = get_vectorstore()
+    store = get_vectorstore(session_id)
     if store is None:
         return {"error": "No papers indexed yet"}
 
@@ -175,7 +173,12 @@ def evaluate_retrieval(query: str, k: int = 5) -> dict:
 # ──────────────────────────────────────────────
 # 3. Faithfulness Check (Citation Grounding)
 # ──────────────────────────────────────────────
-def check_faithfulness(generated_text: str, query: str, k: int = 5) -> dict:
+def check_faithfulness(
+    generated_text: str,
+    query: str,
+    session_id: str,
+    k: int = 5,
+) -> dict:
     """
     Check how well generated text is grounded in retrieved documents.
     Compares key claims in generated text against vector DB content.
@@ -183,7 +186,7 @@ def check_faithfulness(generated_text: str, query: str, k: int = 5) -> dict:
     This is a simple keyword overlap approach — production systems
     would use an LLM-as-judge or NLI model.
     """
-    store = get_vectorstore()
+    store = get_vectorstore(session_id)
     if store is None:
         return {"error": "No papers indexed yet"}
 
@@ -221,7 +224,11 @@ def check_faithfulness(generated_text: str, query: str, k: int = 5) -> dict:
 # 4. check semantic faithfulness
 # ──────────────────────────────────────────────
 
-def check_semantic_faithfulness(generated_text: str, k: int = 5) -> dict:
+def check_semantic_faithfulness(
+    generated_text: str,
+    session_id: str,
+    k: int = 5,
+) -> dict:
     """
     Measure faithfulness using semantic similarity instead of keyword overlap.
     
@@ -231,9 +238,9 @@ def check_semantic_faithfulness(generated_text: str, k: int = 5) -> dict:
 
     Returns a grounding score based on cosine similarity.
     """
-    store = get_vectorstore()
-    if store is None or _embeddings is None:
-        return {"error": "No papers indexed or embeddings not initialized"}
+    store = get_vectorstore(session_id)
+    if store is None:
+        return {"error": "No papers indexed for this session"}
 
     # Split generated text into sentences
     sentences = [s.strip() for s in generated_text.split(".") if len(s.strip()) > 20]
@@ -245,9 +252,6 @@ def check_semantic_faithfulness(generated_text: str, k: int = 5) -> dict:
     SIMILARITY_THRESHOLD = 0.60
 
     for sentence in sentences:
-
-        # Embed the sentence
-        sentence_vec = _embeddings.embed_query(sentence)
 
         # Find the most similar chunk in the store
         results = store.similarity_search_with_score(sentence, k=1)
@@ -276,12 +280,12 @@ def check_semantic_faithfulness(generated_text: str, k: int = 5) -> dict:
 # ──────────────────────────────────────────────
 # 5. Chunk Coverage Analysis
 # ──────────────────────────────────────────────
-def analyze_chunk_coverage() -> dict:
+def analyze_chunk_coverage(session_id: str) -> dict:
     """
     Analyze the vector store contents.
     Shows distribution of chunks across indexed papers.
     """
-    store = get_vectorstore()
+    store = get_vectorstore(session_id)
     if store is None:
         return {"error": "No papers indexed yet"}
 

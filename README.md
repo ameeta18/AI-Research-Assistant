@@ -1,274 +1,308 @@
-# 🔬 AI Research Assistant — RAG-Powered Paper Discovery, Analysis & Generation
+# AI Research Assistant
 
-An intelligent research assistant that **searches**, **analyzes**, and **writes** academic papers using a Retrieval-Augmented Generation (RAG) pipeline. Built with LangGraph, FAISS vector database,FastAPI, MCP and Google Gemini.
+[![Continuous Integration](https://github.com/ameeta18/Ai_Researcher/actions/workflows/ci.yml/badge.svg)](https://github.com/ameeta18/Ai_Researcher/actions/workflows/ci.yml)
 
-> This system implements a full research workflow from paper discovery across two academic search sources, through vector-indexed analysis, to LaTeX paper generation with real citations.
+A production-oriented AI research assistant that discovers academic papers,
+validates and reads open-access PDFs, builds a session-isolated RAG corpus, and
+generates citation-checked research PDFs.
 
----
+The project demonstrates more than an LLM chat interface: it includes durable
+workflow state, caching, reliability controls, structured observability,
+offline evaluation gates, database migrations, tests, and a containerized local
+deployment.
+
+## What it does
+
+1. Searches Semantic Scholar and arXiv for relevant papers.
+2. Validates candidate links before treating them as PDFs.
+3. Extracts, chunks, and embeds selected papers.
+4. Retrieves relevant passages from a session-isolated FAISS index.
+5. Uses a LangGraph tool-calling workflow to analyze or write from that context.
+6. Validates LaTeX citations and compiles the final document with Tectonic.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    subgraph User Interface
-        UI[Streamlit App / FastAPI]
-    end
+    UI[Streamlit / FastAPI] --> AGENT[LangGraph agent]
 
-    subgraph LangGraph Agent
-        A[ReAct Agent\nGemini 2.5 Flash]
-    end
+    AGENT --> SEARCH[Semantic Scholar / arXiv]
+    SEARCH <--> REDIS[(Redis search cache)]
 
-    subgraph Tools
-        T1[🔎 semantic_search]
-        T2[🔍 arxiv_search]
-        T3[📄 read_pdf]
-        T4[💾 index_paper]
-        T5[🗂️ search_papers]
-        T6[📝 render_latex_pdf]
-    end
+    AGENT --> PDF[PDF validation and extraction]
+    PDF --> CHUNKS[Chunking]
+    CHUNKS --> EMB[Gemini embeddings]
+    EMB --> FAISS[(Session-isolated FAISS)]
+    CHUNKS --> PG[(PostgreSQL)]
 
-    subgraph Storage
-        VDB[(FAISS\nVector DB)]
-        EMB[Gemini\nEmbeddings]
-    end
+    AGENT <--> FAISS
+    AGENT <--> CHECKPOINTS[PostgreSQL checkpoints]
+    UI <--> PG
 
-    subgraph External
-        SS[Semantic Scholar API]
-        AX[arXiv API]
-        TEX[Tectonic\nLaTeX Compiler]
-    end
-
-    UI <--> A
-    A --> T1 --> SS
-    A --> T2 --> AX
-    A --> T3
-    A --> T4 --> EMB --> VDB
-    A --> T5 --> VDB
-    A --> T6 --> TEX
+    AGENT --> LATEX[Citation validator and Tectonic]
+    LATEX --> OUTPUT[Generated PDF]
 ```
 
-### RAG Pipeline Flow
+### Storage responsibilities
 
-```mermaid
-flowchart TD
-    P[PDF Paper] -->|read_pdf| R[Raw Text\n~40K chars]
-    R -->|RecursiveCharacterTextSplitter| C[Chunks\n~49 chunks × 1000 chars]
-    C -->|Gemini Embedding API| E[Vector Embeddings\n3072 dimensions]
-    E -->|index_paper| F[(FAISS Index)]
-    
-    Q[User Query] -->|search_papers| F
-    F -->|L2 Similarity Search| TOP[Top-K Relevant Chunks]
-    TOP -->|Context| LLM[Gemini 2.5 Flash]
-    LLM -->|render_latex_pdf| PDF[Research Paper PDF]
+| Component | Responsibility |
+|---|---|
+| PostgreSQL | Durable sessions, messages, paper metadata, extracted chunks, feedback records, and LangGraph checkpoints |
+| FAISS | Fast semantic similarity search over the current session's embedded corpus |
+| Redis | Short-lived cache for public paper-search results |
+| Streamlit memory | User-supplied Gemini key and active UI state |
+
+PostgreSQL does not replace FAISS. PostgreSQL is the durable system of record;
+FAISS remains the retrieval index. If an in-memory FAISS index is lost, the
+application can rebuild it from the session's PostgreSQL chunks.
+
+## Production-focused features
+
+- **Session isolation:** PDF state, embedding clients, and FAISS indexes are
+  isolated by random conversation UUID.
+- **Durable state:** PostgreSQL persists chat history, source chunks, metadata,
+  feedback-ready records, and LangGraph execution checkpoints.
+- **Caching:** Redis caches repeat paper searches with configurable TTLs and
+  degrades safely to a cache miss when unavailable.
+- **Reliability:** External requests use bounded timeouts, retryable-status
+  rules, exponential backoff, jitter, `Retry-After`, and safe user-facing errors.
+- **Input boundaries:** Limits cover message length, query length, result count,
+  PDF size/pages/text, retrieval `k`, and LaTeX compilation time.
+- **Observability:** Structured JSON logs include request/session correlation,
+  latency, status, retry, and tool metadata without prompt or API-key content.
+- **Optional tracing:** LangSmith tracing is configurable and hides inputs and
+  outputs by default.
+- **Citation safety:** Generated LaTeX must have matching `\cite{}` and
+  `\bibitem{}` keys, complete reference metadata, URLs, and no unresolved
+  compiler citation warnings.
+- **Reproducible delivery:** Locked dependencies, non-root container execution,
+  service health checks, versioned Alembic migrations, and GitHub Actions gates.
+
+## Security and identity boundaries
+
+- Every Streamlit user must provide their own Gemini API key.
+- The Streamlit application never falls back to the deployer's
+  `GOOGLE_API_KEY`.
+- Gemini keys are not stored in PostgreSQL, graph state, logs, traces, or
+  generated reports.
+- PostgreSQL sessions use random UUIDs, never API keys, as identifiers.
+- The database is authentication-ready: `users.id` is an internal UUID and
+  `sessions.user_id` is nullable until Google login/logout is implemented.
+- PostgreSQL and Redis are private inside the Docker Compose network.
+
+Google authentication is intentionally future work; the current version does
+not claim multi-user authorization based on login identity.
+
+## Evaluation
+
+The repository contains a deterministic offline challenge set with relevant
+documents, paraphrases, lexical distractors, ambiguous tool routing, unsupported
+claims, missing citations, and representative tool failures. Known failures
+remain in the dataset so the report does not present artificial `1.0` scores.
+
+Current checked-in baseline:
+
+| Metric | Score |
+|---|---:|
+| Retrieval hit rate | 0.8333 |
+| Retrieval mean reciprocal rank | 0.8333 |
+| Retrieval concept coverage | 0.8611 |
+| Tool-selection accuracy | 0.9000 |
+| Groundedness | 0.8333 |
+| Citation completeness | 0.8333 |
+| Tool success rate | 0.9000 |
+
+The suite contains 12 retrieval cases, 10 tool-selection cases, 6 generation
+cases, and 10 tool events. It enforces both absolute minimums and maximum
+allowed drops from the reviewed baseline.
+
+This is a repeatable regression gate, not a replacement for live-model
+evaluation or production monitoring.
+
+## Technology stack
+
+| Area | Technology |
+|---|---|
+| Agent workflow | LangGraph and LangChain |
+| Model and embeddings | Google Gemini |
+| Vector retrieval | FAISS |
+| Durable data | PostgreSQL and SQLAlchemy |
+| Schema migrations | Alembic |
+| Workflow checkpoints | LangGraph PostgreSQL checkpointer |
+| Cache | Redis |
+| Interactive UI | Streamlit |
+| API | FastAPI |
+| Academic sources | Semantic Scholar and arXiv |
+| PDF processing | PyPDF2 and Tectonic |
+| Observability | Structured JSON logging and optional LangSmith tracing |
+| Packaging | uv with a committed lockfile |
+| Delivery | Docker, Docker Compose, and GitHub Actions |
+| Tool interoperability | Model Context Protocol (MCP) |
+
+## Project structure
+
+```text
+Ai_Researcher/
+├── src/
+│   ├── app.py                    # Streamlit interface and BYOK flow
+│   ├── api.py                    # FastAPI interface
+│   ├── graph.py                  # LangGraph agent workflow
+│   ├── config.py                 # Validated environment configuration
+│   ├── reliability.py            # Validation, timeout, and retry policies
+│   ├── observability.py          # Structured logs and tracing
+│   ├── cache.py                  # Redis cache boundary
+│   ├── checkpointing.py          # Memory/PostgreSQL checkpoint selection
+│   ├── session_store.py          # Session-isolated runtime resources
+│   ├── evaluation_suite.py       # Deterministic evaluation runner
+│   ├── migrate.py                # App and checkpoint migrations
+│   ├── persistence/
+│   │   ├── schema.py             # SQLAlchemy application schema
+│   │   └── repository.py         # PostgreSQL persistence boundary
+│   └── tools/
+│       ├── semantic_scholar_tool.py
+│       ├── arxiv_tool.py
+│       ├── pdf_sources.py
+│       ├── read_pdf.py
+│       ├── vector_store.py
+│       └── write_pdf.py
+├── migrations/                   # Versioned Alembic migrations
+├── evals/                        # Challenge set and reviewed baseline
+├── scripts/run_evaluation.py     # Evaluation CLI
+├── tests/                        # Unit, contract, and integration tests
+├── .github/workflows/ci.yml      # Tests, eval gate, and image build
+├── Dockerfile                    # Non-root production image
+├── compose.yaml                  # App, PostgreSQL, migration, and Redis stack
+├── mcp_server.py                 # Standalone academic-search MCP server
+├── .env.example
+├── pyproject.toml
+└── uv.lock
 ```
 
----
+## Quick start with Docker Compose
 
-## Key Features
+### Requirements
 
-🔎 **Dual-Source Paper Discovery** — Search both Semantic Scholar (semantic relevance ranking) and arXiv (keyword matching with PDF links) for the best of both worlds
+- Docker Desktop or Docker Engine with Compose
+- A Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey)
 
-📄 **PDF Ingestion & Chunking** — Extract text from PDFs, split into semantically meaningful chunks using recursive character splitting
+Copy the example configuration and change the local PostgreSQL password:
 
-💾 **Vector Indexing** — Embed chunks using Google's Gemini Embedding API and store in FAISS for efficient similarity search
-
-🗂️ **RAG Retrieval** — Retrieve relevant passages from indexed papers using L2 distance-based semantic search instead of stuffing entire papers into context
-
-📝 **Paper Generation** — Write complete academic papers with mathematical equations, compiled to PDF via Tectonic LaTeX engine
-
-📊 **Evaluation Framework** — Measure retrieval quality, faithfulness grounding, and tool reliability with exportable JSON metrics
-
-🌐 **Dual Interface** — Streamlit UI for interactive demos and a FastAPI backend for programmatic access
-
-🔌 **MCP Server** — Search tools exposed via Model Context Protocol, usable in Claude Desktop or any MCP-compatible client
-
----
-
-## Evaluation Results
-
-Evaluated using the "Attention Is All You Need" paper (Vaswani et al., 2017):
-
-| Metric | Value |
-|--------|-------|
-| Chunks Generated | 49 (avg 957 chars each) |
-| Retrieval Hit Rate | 100% across 5 test queries |
-| Avg Relevance Score (L2) | 0.519 |
-| Faithfulness Grounding | 59.6% (31/52 technical terms) |
-| Queries Tested | multi-head attention, encoder-decoder, self-attention, positional encoding, layer normalization |
-
-> **Note on Faithfulness:** The grounding score uses keyword-overlap analysis — a deliberately simple, transparent approach. The keyword method ensures no inflated metrics while still demonstrating grounding in source material.
-
-<details>
-<summary>📋 Full Evaluation JSON</summary>
-
-```json
-{
-  "session_duration_seconds": 2.6,
-  "papers_indexed": 1,
-  "total_chunks_stored": 49,
-  "retrieval_metrics": {
-    "total_queries": 5,
-    "avg_relevance_score": 0.519,
-    "hit_rate_percent": 100.0
-  },
-  "generation_checks": [
-    {
-      "check_type": "faithfulness",
-      "score": 0.596,
-      "details": "31/52 terms grounded"
-    }
-  ]
-}
+```bash
+cp .env.example .env
 ```
 
-</details>
+On PowerShell:
 
----
-
-## Tech Stack
-
-| Component | Technology | Why This Choice |
-|-----------|-----------|-----------------|
-| **Agent Framework** | LangGraph (LangChain) | ReAct loop with tool calling, state management, checkpointing |
-| **LLM** | Google Gemini 2.5 Flash | 1M context window, free tier, strong tool calling |
-| **Embeddings** | Google Gemini Embedding API | Free, 3072-dim vectors, multilingual support |
-| **Vector Database** | FAISS (local) | No external service needed, zero-config, fast L2 search |
-| **Text Splitting** | RecursiveCharacterTextSplitter | Preserves semantic boundaries across paragraphs and sentences |
-| **Search Sources** | Semantic Scholar + arXiv | Semantic ranking from Semantic Scholar, PDF links from arXiv |
-| **PDF Rendering** | Tectonic (LaTeX) | Lightweight, single-binary LaTeX compiler with auto-dependency fetching |
-| **Frontend** | Streamlit | Rapid prototyping with real-time streaming and session state |
-| **Backend API** | FastAPI | Production-ready REST API with interactive Swagger docs |
-| **Package Manager** | uv | Modern Python tooling — fast, deterministic dependency resolution |
-| **MCP Server** | FastMCP (MCP Python SDK) | Exposes search tools as reusable infrastructure for any MCP client |
-
----
-
-## How It Works
-
-### 1. Search Phase
-```
-User: "I'm interested in attention mechanisms"
-→ Agent calls semantic_search("attention mechanisms") for best relevance
-→ Falls back to arxiv_search if needed
-→ Returns 5 papers with titles, authors, summaries, PDF links
+```powershell
+Copy-Item .env.example .env
 ```
 
-### 2. Analysis Phase
-```
-User: "Read the Transformer paper"
-→ read_pdf(url) extracts ~40K chars of text
-→ index_paper(title) chunks it into ~49 pieces, embeds via Gemini, stores in FAISS
-→ Agent provides detailed analysis: problem, methodology, results, limitations
+Then start the complete free local stack:
+
+```bash
+docker-compose up --build
 ```
 
-### 3. Writing Phase (RAG in Action)
+Open <http://localhost:8501> and enter your Gemini API key in the password field.
+The migration container upgrades both the application schema and LangGraph
+checkpoint tables before Streamlit starts.
+
+Stop the containers with:
+
+```bash
+docker-compose down
 ```
-User: "Write a paper about improvements to self-attention"
-→ search_papers("self-attention improvements") queries FAISS
-→ Returns top-K relevant chunks (not the entire paper!)
-→ Agent writes LaTeX using retrieved context
-→ render_latex_pdf(latex) compiles to PDF via Tectonic
+
+Named volumes preserve PostgreSQL data, generated papers, and the Tectonic
+package cache. Use `docker-compose down -v` only when you intentionally want to
+delete that local data.
+
+## Lightweight local development
+
+Python 3.11 or newer and [uv](https://docs.astral.sh/uv/) are required.
+
+```bash
+uv sync --locked
+uv run python -m streamlit run src/app.py
 ```
 
-**Why RAG matters here:** Instead of stuffing a 40K-character paper into the LLM's context (which would exceed token limits), we store it in FAISS and retrieve only the ~5K chars that are relevant to the current task. This reduced context usage by 87% and made the system scalable — index multiple papers and still stay within token limits.
+With the defaults in `.env.example`, PostgreSQL and Redis are disabled for this
+host-run mode. The app uses in-memory sessions/checkpoints, and users still
+provide their own Gemini key in the UI.
 
-## MCP Server Integration
+To enable a host-accessible PostgreSQL instance, configure:
 
-The academic search tools (arXiv + Semantic Scholar) are also exposed as a 
-standalone **Model Context Protocol (MCP)** server, making them reusable in 
-Claude Desktop or any MCP-compatible client — not locked into this project.
+```dotenv
+DATABASE_ENABLED=true
+DATABASE_URL=postgresql+psycopg://USER:PASSWORD@HOST:5432/DATABASE
+```
 
-### Run standalone
+Apply migrations before starting the application:
+
+```bash
+uv run python -m src.migrate
+```
+
+## FastAPI backend
+
+The FastAPI interface is server-controlled and requires `GOOGLE_API_KEY` in the
+server environment. It does not accept API keys in request bodies.
+
+```bash
+uv run uvicorn src.api:app --reload
+```
+
+Interactive documentation is available at <http://127.0.0.1:8000/docs>.
+
+## Tests and evaluation
+
+Run the same quality checks used in CI:
+
+```bash
+uv sync --locked
+uv run python -m unittest discover -s tests -v
+uv run python scripts/run_evaluation.py
+```
+
+The evaluation command writes local reports to `output/evaluations/`. Generated
+reports and PDFs are intentionally ignored by Git. See
+[evals/README.md](evals/README.md) for baseline-management rules.
+
+GitHub Actions additionally starts PostgreSQL, applies migrations, runs the
+database integration test, builds the production image, and verifies its Python
+and Tectonic runtimes.
+
+## MCP server
+
+The academic search tools are also exposed through a standalone Model Context
+Protocol server:
+
 ```bash
 uv run python mcp_server.py
 ```
 
-### Install into Claude Desktop
-Add to your `claude_desktop_config.json`:
+Example MCP client configuration:
+
 ```json
 {
   "mcpServers": {
     "academic-research": {
       "command": "uv",
-      "args": ["run", "--directory", "/path/to/project", "python", "mcp_server.py"]
+      "args": [
+        "run",
+        "--directory",
+        "/absolute/path/to/Ai_Researcher",
+        "python",
+        "mcp_server.py"
+      ]
     }
   }
 }
 ```
 
-Once configured, the search tools appear directly inside Claude Desktop — 
-demonstrating MCP's core value: tools built once, reusable across any client.
+## Current roadmap
 
----
-
-## Project Structure
-
-```
-research-agent/
-├── src/
-│   ├── config.py                    # LLM, embedding, and app configuration
-│   ├── evaluation.py                # Retrieval, faithfulness, and coverage metrics
-│   ├── graph.py                     # LangGraph ReAct agent orchestration
-│   ├── app.py                       # Streamlit UI with streaming + tool status
-│   ├── api.py                       # FastAPI backend with session management
-    ├── test_eval.py                 # Standalone evaluation script
-│   └── tools/
-│       ├── arxiv_tool.py            # arXiv API search with XML parsing
-│       ├── semantic_scholar_tool.py # Semantic Scholar search with relevance ranking
-│       ├── read_pdf.py              # PDF text extraction with internal caching
-│       ├── vector_store.py          # FAISS index + Gemini embeddings + search
-│       └── write_pdf.py             # LaTeX sanitization + Tectonic compilation
-├── output/                          # Generated .tex, .pdf, and metrics JSON
-├── pyproject.toml
-├── mcp_server.py                    # MCP server exposing search tools
-├── .env.example
-└── README.md
-```
-
----
-
-## Setup
-
-### Prerequisites
-- Python 3.10+
-- [uv](https://docs.astral.sh/uv/) package manager
-- [Tectonic](https://tectonic-typesetting.github.io/) LaTeX compiler (for PDF generation)
-- Free [Google AI Studio API key](https://aistudio.google.com/apikey)
-- Optional: [Semantic Scholar API key](https://www.semanticscholar.org/product/api) for higher rate limits
-
-### Installation
-
-```bash
-# Clone the repo
-git clone https://github.com/ameeta18/ai-research-assistant.git
-cd ai-research-assistant
-
-# Install dependencies
-uv sync
-
-# Configure environment
-cp .env.example .env
-# Add your GOOGLE_API_KEY (and optionally SEMANTIC_SCHOLAR_API_KEY) to .env
-```
-
-### Run the Streamlit App
-
-```bash
-uv run streamlit run src/app.py
-```
-
-### Run the FastAPI Backend
-
-```bash
-uv run uvicorn src.api:app --reload
-# Interactive docs at http://127.0.0.1:8000/docs
-```
-
-### Run Evaluation
-
-```bash
-uv run python test_eval.py
-# Results saved to output/evaluation_results.json
-```
-
----
+- Google OIDC login/logout and user-owned conversation history
+- Production deployment with managed secrets and TLS
+- Live-model evaluation from reviewed production traces
+- Database backups, retention policy, and restore drills

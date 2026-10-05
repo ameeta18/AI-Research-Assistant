@@ -2,9 +2,12 @@
 import re
 import subprocess
 import shutil
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from langchain_core.tools import tool
+
+from src.config import LATEX_COMPILE_TIMEOUT_SECONDS, MAX_LATEX_CHARS
 
 
 # ──────────────────────────────────────────────
@@ -12,6 +15,118 @@ from langchain_core.tools import tool
 # ──────────────────────────────────────────────
 OUTPUT_DIR = Path(__file__).resolve().parent.parent.parent / "output"
 OUTPUT_DIR.mkdir(exist_ok=True)
+
+
+CITATION_PATTERN = re.compile(
+    r"\\(?:cite|citep|citet|autocite|parencite|textcite)\*?"
+    r"(?:\s*\[[^\]]*\]){0,2}\s*\{([^{}]+)\}"
+)
+BIBITEM_BLOCK_PATTERN = re.compile(
+    r"\\bibitem(?:\s*\[[^\]]*\])?\s*\{(?P<key>[^{}]+)\}"
+    r"(?P<body>.*?)(?=\\bibitem|\\end\{thebibliography\})",
+    re.DOTALL,
+)
+TITLE_PATTERN = re.compile(r"\\(?:textit|emph)\{[^{}]+\}")
+YEAR_PATTERN = re.compile(r"\b(?:19|20)\d{2}\b")
+URL_PATTERN = re.compile(r"https?://[^\s}\]]+")
+UNRESOLVED_CITATION_PATTERNS = (
+    re.compile(r"citation.*undefined", re.IGNORECASE),
+    re.compile(r"undefined citations?", re.IGNORECASE),
+    re.compile(r"there were undefined references", re.IGNORECASE),
+    re.compile(r"empty bibliography", re.IGNORECASE),
+)
+
+
+def _without_latex_comments(content: str) -> str:
+    """Remove ordinary LaTeX comments so they cannot satisfy validation."""
+    return re.sub(r"(?<!\\)%[^\n]*", "", content)
+
+
+def validate_citations(content: str) -> list[str]:
+    """Return citation-integrity errors for a self-contained LaTeX document."""
+    source = _without_latex_comments(content)
+    errors: list[str] = []
+
+    citation_keys = [
+        key.strip()
+        for match in CITATION_PATTERN.finditer(source)
+        for key in match.group(1).split(",")
+        if key.strip()
+    ]
+    if not citation_keys:
+        errors.append("No in-text citation command such as \\cite{source-key} was found.")
+
+    if r"\begin{thebibliography}" not in source:
+        errors.append("A self-contained thebibliography environment is required.")
+    if r"\end{thebibliography}" not in source:
+        errors.append("The thebibliography environment is not closed.")
+
+    bibliography_matches = list(BIBITEM_BLOCK_PATTERN.finditer(source))
+    bibliography_keys = [match.group("key").strip() for match in bibliography_matches]
+    if not bibliography_keys:
+        errors.append("No bibliography entries using \\bibitem{source-key} were found.")
+
+    duplicate_keys = sorted(
+        key for key, count in Counter(bibliography_keys).items() if count > 1
+    )
+    if duplicate_keys:
+        errors.append(
+            "Duplicate bibliography keys: " + ", ".join(duplicate_keys) + "."
+        )
+
+    unknown_keys = sorted(set(citation_keys) - set(bibliography_keys))
+    if unknown_keys:
+        errors.append(
+            "Citation keys without matching bibliography entries: "
+            + ", ".join(unknown_keys)
+            + "."
+        )
+
+    uncited_keys = sorted(set(bibliography_keys) - set(citation_keys))
+    if uncited_keys:
+        errors.append(
+            "Bibliography entries not cited in the document: "
+            + ", ".join(uncited_keys)
+            + "."
+        )
+
+    for match in bibliography_matches:
+        key = match.group("key").strip()
+        body = match.group("body").strip()
+        title_match = TITLE_PATTERN.search(body)
+        author_text = body[: title_match.start()] if title_match else ""
+        author_words = re.findall(r"[A-Za-z][A-Za-z.'-]*", author_text)
+
+        missing_fields = []
+        if len(author_words) < 2:
+            missing_fields.append("author")
+        if title_match is None:
+            missing_fields.append("title in \\textit{} or \\emph{}")
+        if YEAR_PATTERN.search(body) is None:
+            missing_fields.append("four-digit year")
+        if URL_PATTERN.search(body) is None:
+            missing_fields.append("HTTP(S) URL")
+        if missing_fields:
+            errors.append(
+                f"Bibliography entry '{key}' is missing: "
+                + ", ".join(missing_fields)
+                + "."
+            )
+
+    return errors
+
+
+def find_unresolved_citation_warnings(log: str) -> list[str]:
+    """Extract unresolved citation/reference warnings from compiler output."""
+    warnings = []
+    for line in log.splitlines():
+        normalized = line.strip()
+        if normalized and any(
+            pattern.search(normalized)
+            for pattern in UNRESOLVED_CITATION_PATTERNS
+        ):
+            warnings.append(normalized)
+    return list(dict.fromkeys(warnings))
 
 
 # ──────────────────────────────────────────────
@@ -124,28 +239,38 @@ def sanitize_latex(content: str) -> str:
 # ──────────────────────────────────────────────
 def _compile_with_tectonic(tex_path: Path, output_dir: Path) -> tuple[bool, str]:
     """Try compiling with tectonic."""
-    result = subprocess.run(
-        ["tectonic", str(tex_path), "-o", str(output_dir)],
-        capture_output=True,
-        text=True,
-        timeout=120,
-    )
+    try:
+        result = subprocess.run(
+            ["tectonic", str(tex_path), "-o", str(output_dir)],
+            capture_output=True,
+            text=True,
+            timeout=LATEX_COMPILE_TIMEOUT_SECONDS,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "Tectonic compilation timed out."
     log = (result.stdout or "") + "\n" + (result.stderr or "")
     return result.returncode == 0, log
 
 
 def _compile_with_pdflatex(tex_path: Path, output_dir: Path) -> tuple[bool, str]:
-    """Fallback: try compiling with pdflatex (run twice for references)."""
-    for _ in range(2):
-        result = subprocess.run(
-            ["pdflatex", "-interaction=nonstopmode", 
-             f"-output-directory={output_dir}", str(tex_path)],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-    log = (result.stdout or "") + "\n" + (result.stderr or "")
-    return result.returncode == 0, log
+    """Fallback: run enough pdfLaTeX passes to resolve references."""
+    logs = []
+    try:
+        for _ in range(3):
+            result = subprocess.run(
+                ["pdflatex", "-interaction=nonstopmode",
+                 f"-output-directory={output_dir}", str(tex_path)],
+                capture_output=True,
+                text=True,
+                timeout=LATEX_COMPILE_TIMEOUT_SECONDS,
+            )
+            current_log = (result.stdout or "") + "\n" + (result.stderr or "")
+            logs.append(current_log)
+            if result.returncode != 0:
+                return False, "\n".join(logs)
+    except subprocess.TimeoutExpired:
+        return False, "pdfLaTeX compilation timed out."
+    return True, logs[-1]
 
 
 # ──────────────────────────────────────────────
@@ -162,14 +287,28 @@ def render_latex_pdf(latex_content: str) -> str:
         Path to the generated PDF file, or error message with details
     """
     # Validate input
-    if not latex_content or len(latex_content.strip()) < 50:
+    if not isinstance(latex_content, str) or len(latex_content.strip()) < 50:
         return "Error: LaTeX content too short. Provide a complete document."
+    if len(latex_content) > MAX_LATEX_CHARS:
+        return (
+            "Error: LaTeX content exceeds the "
+            f"{MAX_LATEX_CHARS}-character compilation limit."
+        )
 
     # Sanitize
     latex_content = sanitize_latex(latex_content)
 
+    citation_errors = validate_citations(latex_content)
+    if citation_errors:
+        details = "\n".join(f"- {error}" for error in citation_errors)
+        return (
+            "Error: Citation validation failed before PDF compilation.\n"
+            f"{details}\n"
+            "Use matching \\cite{key} and \\bibitem{key} commands, then retry once."
+        )
+
     # Create file paths
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     tex_path = OUTPUT_DIR / f"paper_{timestamp}.tex"
     pdf_path = OUTPUT_DIR / f"paper_{timestamp}.pdf"
     log_path = OUTPUT_DIR / f"paper_{timestamp}.log"
@@ -180,27 +319,41 @@ def render_latex_pdf(latex_content: str) -> str:
     # Try compilation
     success = False
     log = ""
+    attempt_logs = []
 
     # Attempt 1: tectonic
     if shutil.which("tectonic"):
-        success, log = _compile_with_tectonic(tex_path, OUTPUT_DIR)
+        success, tectonic_log = _compile_with_tectonic(tex_path, OUTPUT_DIR)
+        attempt_logs.append("Tectonic:\n" + tectonic_log)
+        if success and find_unresolved_citation_warnings(tectonic_log):
+            success = False
 
     # Attempt 2: pdflatex fallback
     if not success and shutil.which("pdflatex"):
-        success, log = _compile_with_pdflatex(tex_path, OUTPUT_DIR)
+        success, pdflatex_log = _compile_with_pdflatex(tex_path, OUTPUT_DIR)
+        attempt_logs.append("pdfLaTeX:\n" + pdflatex_log)
+        if success and find_unresolved_citation_warnings(pdflatex_log):
+            success = False
+
+    log = "\n\n".join(attempt_logs)
 
     # Save log regardless
     log_path.write_text(log, encoding="utf-8")
 
     # Check result
-    if pdf_path.exists():
+    if success and pdf_path.exists():
         return f"PDF generated successfully: {pdf_path}"
 
     # If PDF not found, give helpful error
     # Extract the actual LaTeX error from log
     error_lines = []
     for line in log.split("\n"):
-        if line.startswith("!") or "Error" in line or "Undefined" in line:
+        if (
+            line.startswith("!")
+            or "Error" in line
+            or "Undefined" in line
+            or find_unresolved_citation_warnings(line)
+        ):
             error_lines.append(line.strip())
 
     error_summary = "\n".join(error_lines[:5]) if error_lines else "Unknown error"

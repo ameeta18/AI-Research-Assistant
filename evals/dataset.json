@@ -1,0 +1,320 @@
+{
+  "schema_version": "1.1.0",
+  "name": "ai-research-assistant-challenge-set",
+  "evaluation_mode": "offline_challenge_fixtures",
+  "corpus": [
+    {
+      "id": "transformer-paper",
+      "title": "Attention Is All You Need",
+      "text": "The Transformer replaces recurrence and convolution with self-attention. Multi-head attention projects queries, keys, and values into parallel representation subspaces. Sinusoidal positional encoding supplies token order information. Residual connections and layer normalization surround every encoder and decoder sub-layer."
+    },
+    {
+      "id": "rag-paper",
+      "title": "Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks",
+      "text": "Retrieval-augmented generation combines a parametric language model with non-parametric external memory. A retriever selects relevant passages and the generator conditions its answer on retrieved evidence. Grounded retrieval improves knowledge-intensive question answering and allows provenance through source passages."
+    },
+    {
+      "id": "faiss-paper",
+      "title": "Billion-scale Similarity Search with GPUs",
+      "text": "FAISS provides efficient vector similarity search and clustering for dense embeddings. An index supports nearest-neighbor retrieval using distance metrics, compressed representations, and GPU acceleration. Approximate search trades a small amount of recall for lower latency and memory usage."
+    },
+    {
+      "id": "evaluation-paper",
+      "title": "RAG Evaluation with Retrieval and Groundedness Metrics",
+      "text": "Production evaluation separates retrieval quality from answer quality. Retrieval is measured with hit rate, recall at k, and mean reciprocal rank. Generation evaluation measures groundedness, citation completeness, and unsupported claims. Versioned golden datasets and regression thresholds prevent silent quality degradation."
+    },
+    {
+      "id": "database-index-paper",
+      "title": "Approximate Indexes for Analytical Databases",
+      "text": "Database indexes reduce lookup latency but consume additional memory. Approximate database search can trade recall for faster query speed. The system stores compressed table summaries rather than dense embedding vectors."
+    },
+    {
+      "id": "recurrent-attention-paper",
+      "title": "Attention in Recurrent Sequence Models",
+      "text": "A recurrent encoder processes tokens in order and an attention layer aligns decoder states with encoder states. Unlike fully attention-based architectures, recurrence remains responsible for sequence order."
+    },
+    {
+      "id": "classifier-metrics-paper",
+      "title": "Metrics for Imbalanced Classification",
+      "text": "Classifier evaluation reports precision, recall, F1 score, and area under the precision-recall curve. Threshold selection changes the balance between false positives and false negatives."
+    },
+    {
+      "id": "citation-practice-paper",
+      "title": "Citation and Provenance in Scientific Writing",
+      "text": "Scientific citations let readers trace statements to source evidence. Complete references include authors, title, year, and a stable URL. Unsupported statements should be removed or clearly qualified."
+    }
+  ],
+  "retrieval_cases": [
+    {
+      "id": "retrieval-transformer-attention",
+      "query": "multi-head attention queries keys values",
+      "expected_document_ids": ["transformer-paper"],
+      "expected_concepts": ["multi-head attention", "queries", "keys", "values"],
+      "k": 3
+    },
+    {
+      "id": "retrieval-transformer-position",
+      "query": "sinusoidal positional encoding token order",
+      "expected_document_ids": ["transformer-paper"],
+      "expected_concepts": ["sinusoidal positional encoding", "token order"],
+      "k": 3
+    },
+    {
+      "id": "retrieval-rag-memory",
+      "query": "retrieval augmented generation external memory",
+      "expected_document_ids": ["rag-paper"],
+      "expected_concepts": ["parametric language model", "external memory", "retrieved evidence"],
+      "k": 3
+    },
+    {
+      "id": "retrieval-rag-provenance",
+      "query": "grounded answers provenance source passages",
+      "expected_document_ids": ["rag-paper"],
+      "expected_concepts": ["grounded retrieval", "provenance", "source passages"],
+      "k": 3
+    },
+    {
+      "id": "retrieval-faiss-index",
+      "query": "FAISS vector similarity nearest neighbor index",
+      "expected_document_ids": ["faiss-paper"],
+      "expected_concepts": ["vector similarity search", "nearest-neighbor retrieval", "distance metrics"],
+      "k": 3
+    },
+    {
+      "id": "retrieval-faiss-tradeoff",
+      "query": "approximate search recall latency memory tradeoff",
+      "expected_document_ids": ["faiss-paper"],
+      "expected_concepts": ["approximate search", "recall", "latency", "memory usage"],
+      "k": 3
+    },
+    {
+      "id": "retrieval-eval-ranking",
+      "query": "retrieval hit rate recall at k reciprocal rank",
+      "expected_document_ids": ["evaluation-paper"],
+      "expected_concepts": ["hit rate", "recall at k", "mean reciprocal rank"],
+      "k": 3
+    },
+    {
+      "id": "retrieval-eval-regression",
+      "query": "golden dataset regression thresholds quality degradation",
+      "expected_document_ids": ["evaluation-paper"],
+      "expected_concepts": ["golden datasets", "regression thresholds", "quality degradation"],
+      "k": 3
+    },
+    {
+      "id": "retrieval-transformer-paraphrase",
+      "query": "how does the architecture know word sequence without recurrent layers",
+      "expected_document_ids": ["transformer-paper"],
+      "expected_concepts": ["positional encoding", "token order"],
+      "k": 1
+    },
+    {
+      "id": "retrieval-rag-paraphrase",
+      "query": "attach outside evidence to an answer so its origin can be checked",
+      "expected_document_ids": ["rag-paper"],
+      "expected_concepts": ["external memory", "provenance"],
+      "k": 1
+    },
+    {
+      "id": "retrieval-faiss-lexical-trap",
+      "query": "memory footprint versus speed for approximate database lookup",
+      "expected_document_ids": ["faiss-paper"],
+      "expected_concepts": ["vector similarity search", "latency", "memory usage"],
+      "k": 1
+    },
+    {
+      "id": "retrieval-eval-distractor",
+      "query": "which ranking measures expose whether the right evidence appeared early",
+      "expected_document_ids": ["evaluation-paper"],
+      "expected_concepts": ["hit rate", "mean reciprocal rank"],
+      "k": 1
+    }
+  ],
+  "tool_selection_cases": [
+    {
+      "id": "tools-new-topic",
+      "user_request": "Find research about transformer efficiency",
+      "expected_tools": ["semantic_search"],
+      "observed_tools": ["semantic_search"]
+    },
+    {
+      "id": "tools-search-fallback",
+      "user_request": "Find papers when Semantic Scholar is unavailable",
+      "expected_tools": ["semantic_search", "arxiv_search"],
+      "observed_tools": ["semantic_search", "arxiv_search"]
+    },
+    {
+      "id": "tools-read-and-analyze",
+      "user_request": "Read this PDF and analyze its methodology",
+      "expected_tools": ["read_pdf", "index_paper", "search_papers"],
+      "observed_tools": ["read_pdf", "index_paper", "search_papers"]
+    },
+    {
+      "id": "tools-existing-corpus",
+      "user_request": "What limitations are described in the indexed papers?",
+      "expected_tools": ["search_papers"],
+      "observed_tools": ["search_papers"]
+    },
+    {
+      "id": "tools-write-paper",
+      "user_request": "Write a cited paper using the indexed sources",
+      "expected_tools": ["search_papers", "render_latex_pdf"],
+      "observed_tools": ["search_papers", "render_latex_pdf"]
+    },
+    {
+      "id": "tools-render-document",
+      "user_request": "Compile the completed LaTeX document",
+      "expected_tools": ["render_latex_pdf"],
+      "observed_tools": ["render_latex_pdf"]
+    },
+    {
+      "id": "tools-no-call-conceptual-question",
+      "user_request": "Explain in one sentence what retrieval-augmented generation means",
+      "expected_tools": [],
+      "observed_tools": []
+    },
+    {
+      "id": "tools-ambiguous-latest-paper",
+      "user_request": "Find the newest preprint about efficient attention",
+      "expected_tools": ["arxiv_search"],
+      "observed_tools": ["semantic_search"]
+    },
+    {
+      "id": "tools-index-provided-paper",
+      "user_request": "Store the PDF I just provided so we can query it later",
+      "expected_tools": ["read_pdf", "index_paper"],
+      "observed_tools": ["read_pdf", "index_paper"]
+    },
+    {
+      "id": "tools-answer-from-index",
+      "user_request": "Compare the latency trade-offs in the papers already indexed",
+      "expected_tools": ["search_papers"],
+      "observed_tools": ["search_papers"]
+    }
+  ],
+  "generation_cases": [
+    {
+      "id": "generation-transformer",
+      "source_context": "Multi-head attention projects queries, keys, and values into parallel representation subspaces. Sinusoidal positional encoding supplies token order information.",
+      "generated_text": "Multi-head attention uses parallel projections of queries, keys, and values. Sinusoidal positional encoding supplies token order information.\n\n[1] Vaswani et al. (2017). Attention Is All You Need. URL: https://arxiv.org/pdf/1706.03762",
+      "claims": [
+        {
+          "statement": "Multi-head attention uses parallel projections of queries, keys, and values",
+          "evidence_terms": ["multi-head attention", "queries", "keys", "values", "parallel"]
+        },
+        {
+          "statement": "Sinusoidal positional encoding supplies token order information",
+          "evidence_terms": ["sinusoidal positional encoding", "token order"]
+        }
+      ],
+      "forbidden_claims": ["quantum entanglement trains the transformer"],
+      "expected_citation_urls": ["https://arxiv.org/pdf/1706.03762"]
+    },
+    {
+      "id": "generation-rag",
+      "source_context": "Retrieval-augmented generation combines a parametric language model with non-parametric external memory. The generator conditions its answer on retrieved evidence and source passages provide provenance.",
+      "generated_text": "Retrieval-augmented generation combines a parametric model with external memory. The generator uses retrieved evidence, while source passages provide provenance.\n\n[1] Lewis et al. (2020). Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks. URL: https://arxiv.org/pdf/2005.11401",
+      "claims": [
+        {
+          "statement": "Retrieval-augmented generation combines a parametric model with external memory",
+          "evidence_terms": ["retrieval-augmented generation", "parametric language model", "external memory"]
+        },
+        {
+          "statement": "The generator uses retrieved evidence, while source passages provide provenance",
+          "evidence_terms": ["retrieved evidence", "source passages", "provenance"]
+        }
+      ],
+      "forbidden_claims": ["retrieval removes the need for source evidence"],
+      "expected_citation_urls": ["https://arxiv.org/pdf/2005.11401"]
+    },
+    {
+      "id": "generation-faiss",
+      "source_context": "FAISS supports nearest-neighbor vector search with distance metrics. Approximate search trades a small amount of recall for lower latency and memory usage.",
+      "generated_text": "FAISS supports nearest-neighbor vector search using distance metrics. Approximate search can trade some recall for lower latency and memory usage.\n\n[1] Johnson et al. (2017). Billion-scale Similarity Search with GPUs. URL: https://arxiv.org/pdf/1702.08734",
+      "claims": [
+        {
+          "statement": "FAISS supports nearest-neighbor vector search using distance metrics",
+          "evidence_terms": ["FAISS", "nearest-neighbor", "vector search", "distance metrics"]
+        },
+        {
+          "statement": "Approximate search can trade some recall for lower latency and memory usage",
+          "evidence_terms": ["approximate search", "recall", "latency", "memory usage"]
+        }
+      ],
+      "forbidden_claims": ["FAISS guarantees exact search with zero memory"],
+      "expected_citation_urls": ["https://arxiv.org/pdf/1702.08734"]
+    },
+    {
+      "id": "generation-evaluation",
+      "source_context": "Retrieval is measured with hit rate, recall at k, and mean reciprocal rank. Generation evaluation measures groundedness and citation completeness. Versioned golden datasets and regression thresholds prevent silent quality degradation.",
+      "generated_text": "Retrieval evaluation uses hit rate, recall at k, and mean reciprocal rank. Generation evaluation measures groundedness and citation completeness. Versioned golden datasets with regression thresholds detect quality degradation.\n\n[1] Es et al. (2023). RAGAS Automated Evaluation of Retrieval Augmented Generation. URL: https://arxiv.org/pdf/2309.15217",
+      "claims": [
+        {
+          "statement": "Retrieval evaluation uses hit rate, recall at k, and mean reciprocal rank",
+          "evidence_terms": ["hit rate", "recall at k", "mean reciprocal rank"]
+        },
+        {
+          "statement": "Generation evaluation measures groundedness and citation completeness",
+          "evidence_terms": ["groundedness", "citation completeness"]
+        },
+        {
+          "statement": "Versioned golden datasets with regression thresholds detect quality degradation",
+          "evidence_terms": ["golden datasets", "regression thresholds", "quality degradation"]
+        }
+      ],
+      "forbidden_claims": ["evaluation requires no reference answers or evidence"],
+      "expected_citation_urls": ["https://arxiv.org/pdf/2309.15217"]
+    },
+    {
+      "id": "generation-partially-unsupported",
+      "source_context": "Approximate nearest-neighbor search can reduce latency and memory use by accepting a small reduction in recall. The available evidence does not compare FAISS with every vector database.",
+      "generated_text": "Approximate search can reduce latency and memory use while sacrificing some recall. FAISS is always faster than every other vector database.\n\n[1] Johnson et al. (2017). Billion-scale Similarity Search with GPUs. URL: https://arxiv.org/pdf/1702.08734",
+      "claims": [
+        {
+          "statement": "Approximate search can reduce latency and memory use while sacrificing some recall",
+          "evidence_terms": ["approximate nearest-neighbor search", "latency", "memory use", "reduction in recall"]
+        }
+      ],
+      "forbidden_claims": ["FAISS is always faster than every other vector database"],
+      "expected_citation_urls": ["https://arxiv.org/pdf/1702.08734"]
+    },
+    {
+      "id": "generation-incomplete-answer-and-citation",
+      "source_context": "A retriever selects relevant passages. The generator conditions its answer on the retrieved evidence. Source passages provide provenance for the response.",
+      "generated_text": "A retriever selects relevant passages for the generator.\n\nLewis et al., Retrieval-Augmented Generation, 2020.",
+      "claims": [
+        {
+          "statement": "A retriever selects relevant passages for the generator",
+          "evidence_terms": ["retriever", "relevant passages", "generator"]
+        },
+        {
+          "statement": "Source passages provide provenance for the response",
+          "evidence_terms": ["source passages", "provenance"]
+        }
+      ],
+      "forbidden_claims": [],
+      "expected_citation_urls": ["https://arxiv.org/pdf/2005.11401"]
+    }
+  ],
+  "tool_events": [
+    {"tool": "semantic_search", "success": true, "duration_ms": 420.0},
+    {"tool": "semantic_search", "success": false, "duration_ms": 30000.0},
+    {"tool": "arxiv_search", "success": true, "duration_ms": 510.0},
+    {"tool": "read_pdf", "success": true, "duration_ms": 840.0},
+    {"tool": "index_paper", "success": true, "duration_ms": 1250.0},
+    {"tool": "search_papers", "success": true, "duration_ms": 24.0},
+    {"tool": "search_papers", "success": true, "duration_ms": 21.0},
+    {"tool": "render_latex_pdf", "success": true, "duration_ms": 980.0},
+    {"tool": "semantic_search", "success": true, "duration_ms": 12.0},
+    {"tool": "search_papers", "success": true, "duration_ms": 18.0}
+  ],
+  "thresholds": {
+    "retrieval_hit_rate": {"minimum": 0.7, "max_drop": 0.05},
+    "retrieval_mrr": {"minimum": 0.65, "max_drop": 0.05},
+    "retrieval_concept_coverage": {"minimum": 0.7, "max_drop": 0.05},
+    "tool_selection_accuracy": {"minimum": 0.8, "max_drop": 0.05},
+    "groundedness": {"minimum": 0.8, "max_drop": 0.05},
+    "citation_completeness": {"minimum": 0.8, "max_drop": 0.05},
+    "tool_success_rate": {"minimum": 0.85, "max_drop": 0.05}
+  }
+}

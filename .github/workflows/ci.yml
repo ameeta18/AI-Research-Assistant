@@ -1,0 +1,123 @@
+name: Continuous Integration
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Tests and AI quality gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: ai_researcher_test
+          POSTGRES_USER: ai_researcher
+          POSTGRES_PASSWORD: test-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ai_researcher -d ai_researcher_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install uv and Python
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: latest-known
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install locked dependencies
+        run: uv sync --locked
+
+      - name: Apply PostgreSQL migrations
+        env:
+          DATABASE_ENABLED: "true"
+          DATABASE_URL: postgresql+psycopg://ai_researcher:test-only-password@localhost:5432/ai_researcher_test
+          LANGGRAPH_STRICT_MSGPACK: "true"
+        run: uv run python -m src.migrate
+
+      - name: Run automated tests
+        id: tests
+        continue-on-error: true
+        env:
+          TEST_DATABASE_URL: postgresql+psycopg://ai_researcher:test-only-password@localhost:5432/ai_researcher_test
+        run: uv run python -m unittest discover -s tests -v
+
+      - name: Run AI evaluation regression gate
+        id: evaluation
+        continue-on-error: true
+        run: uv run python scripts/run_evaluation.py
+
+      - name: Upload evaluation reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: evaluation-report
+          path: |
+            output/evaluations/latest.json
+            output/evaluations/latest.md
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Enforce quality gates
+        if: always()
+        shell: bash
+        env:
+          TEST_OUTCOME: ${{ steps.tests.outcome }}
+          EVALUATION_OUTCOME: ${{ steps.evaluation.outcome }}
+        run: |
+          failed=0
+
+          if [[ "$TEST_OUTCOME" != "success" ]]; then
+            echo "Automated tests failed or did not run."
+            failed=1
+          fi
+
+          if [[ "$EVALUATION_OUTCOME" != "success" ]]; then
+            echo "AI evaluation regression gate failed or did not run."
+            failed=1
+          fi
+
+          exit "$failed"
+
+  container:
+    name: Build production container
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build locked application image
+        run: docker build --tag ai-researcher:ci .
+
+      - name: Verify Python runtime dependencies
+        run: docker run --rm --entrypoint python ai-researcher:ci -c "import faiss, streamlit"
+
+      - name: Verify Tectonic runtime
+        run: docker run --rm --entrypoint tectonic ai-researcher:ci --version

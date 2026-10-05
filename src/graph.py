@@ -1,13 +1,14 @@
 # src/graph.py
-from typing import Annotated, Literal
+from functools import partial
+from typing import Annotated, Any, Literal
 from typing_extensions import TypedDict
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
-from langgraph.checkpoint.memory import MemorySaver
-from langchain_core.messages import AIMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
-from src.config import get_llm, THREAD_ID
+from src.checkpointing import get_checkpointer
+from src.config import get_llm
 from src.tools.arxiv_tool import arxiv_search
 from src.tools.read_pdf import read_pdf
 from src.tools.vector_store import index_paper, search_papers
@@ -19,6 +20,7 @@ from src.tools.semantic_scholar_tool import semantic_search
 # ──────────────────────────────────────────────
 class State(TypedDict):
     messages: Annotated[list, add_messages]
+    session_id: str
 
 
 # ──────────────────────────────────────────────
@@ -49,6 +51,8 @@ When user mentions a research topic:
 
 When user picks a paper to analyze:
   1. read_pdf(url) → gets a preview of the paper
+     - If the download fails, use arxiv_search with the exact paper title and try
+       its verified PDF link once before reporting that the paper is unavailable
   2. index_paper(title) → stores FULL text in vector DB
   3. search_papers(key topics) → retrieve detailed sections from vector DB
   4. Provide a DETAILED analysis covering:
@@ -73,16 +77,22 @@ RULES:
 - Include mathematical equations in written papers
 
 REFERENCE RULES:
-- Every reference MUST include: authors, title, year, and arXiv PDF link
-- Format: [1] Author et al. (Year). Title. URL: https://arxiv.org/pdf/XXXX
+- Every factual source claim MUST use an in-text \\cite{source-key} command
+- Use a self-contained \\begin{thebibliography}{99} section with \\bibitem{source-key}
+- Every bibliography entry MUST include: authors, title in \\textit{}, year, and HTTP(S) URL
+- Every \\cite key MUST match exactly one \\bibitem key, and every \\bibitem MUST be cited
+- Do not use a separate .bib file, BibTeX, or Biber
 - Prioritize citing papers found via arxiv_search — use their exact PDF links
 - You may cite well-known papers from your knowledge but MUST include their real arXiv PDF link
-- NEVER include a reference without a URL"""
+- NEVER include a reference without a URL
+- If render_latex_pdf returns a citation-validation error, correct every listed
+  issue and call the tool exactly one more time
+- Never claim that a PDF was generated unless render_latex_pdf reports success"""
 
 
-def call_agent(state: State) -> dict:
+def call_agent(state: State, *, llm: Any | None = None) -> dict:
     """Single agent with all tools."""
-    llm = get_llm().bind_tools(tools)
+    llm = llm or get_llm().bind_tools(tools)
     messages = [SystemMessage(content=SYSTEM_PROMPT)] + state["messages"]
     response = llm.invoke(messages)
 
@@ -109,17 +119,19 @@ def should_continue(state: State) -> Literal["tools", END]:
 # ──────────────────────────────────────────────
 # 3. Build Graph
 # ──────────────────────────────────────────────
-def build_graph():
+def build_graph(api_key: str | None = None):
+    """Build an agent graph without placing credentials in graph state."""
     workflow = StateGraph(State)
+    llm = get_llm(api_key).bind_tools(tools)
 
-    workflow.add_node("agent", call_agent)
+    workflow.add_node("agent", partial(call_agent, llm=llm))
     workflow.add_node("tools", tool_node)
 
     workflow.add_edge(START, "agent")
     workflow.add_conditional_edges("agent", should_continue)
     workflow.add_edge("tools", "agent")
 
-    checkpointer = MemorySaver()
+    checkpointer = get_checkpointer()
     return workflow.compile(checkpointer=checkpointer)
 
 

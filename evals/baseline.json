@@ -1,0 +1,13 @@
+{
+  "dataset_version": "1.1.0",
+  "evaluation_mode": "offline_challenge_fixtures",
+  "metrics": {
+    "citation_completeness": 0.8333,
+    "groundedness": 0.8333,
+    "retrieval_concept_coverage": 0.8611,
+    "retrieval_hit_rate": 0.8333,
+    "retrieval_mrr": 0.8333,
+    "tool_selection_accuracy": 0.9,
+    "tool_success_rate": 0.9
+  }
+}
