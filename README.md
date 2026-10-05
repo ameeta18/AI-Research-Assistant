@@ -1,6 +1,6 @@
 # AI Research Assistant
 
-[![Continuous Integration](https://github.com/ameeta18/Ai_Researcher/actions/workflows/ci.yml/badge.svg)](https://github.com/ameeta18/Ai_Researcher/actions/workflows/ci.yml)
+[![Continuous Integration](https://github.com/ameeta18/AI-Research-Assistant/actions/workflows/ci.yml/badge.svg)](https://github.com/ameeta18/AI-Research-Assistant/actions/workflows/ci.yml)
 
 A production-oriented AI research assistant that discovers academic papers,
 validates and reads open-access PDFs, builds a session-isolated RAG corpus, and
